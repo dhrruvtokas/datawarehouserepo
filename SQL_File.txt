@@ -1,0 +1,141 @@
+-- capture:
+
+set echo on
+SPOOL Data_Warehouse_Output.txt
+
+
+-- Dropping Exisiting Tables:
+
+DROP TABLE TransPerDIM CASCADE CONSTRAINTS;
+DROP TABLE BkCatDIM CASCADE CONSTRAINTS;
+DROP TABLE CustLocDIM CASCADE CONSTRAINTS;
+DROP TABLE BkCostDIM CASCADE CONSTRAINTS;
+DROP TABLE TmpFACT CASCADE CONSTRAINTS;
+DROP TABLE PublishFACT CASCADE CONSTRAINTS;
+
+
+-- Constructing FACTS and DIMENSIONS:
+
+create table TransPerDIM (
+TimePeriod number(1),
+Quarter varchar2(20),
+Description varchar2(20));
+
+insert into TransPerDIM values (1, 'Quarter 1', 'Jan-Mar');
+insert into TransPerDIM values (2, 'Quarter 2', 'Apr-Jun');
+insert into TransPerDIM values (3, 'Quarter 3', 'Jul-Sep');
+insert into TransPerDIM values (4, 'Quarter 4', 'Oct-Dec');
+
+create table BkCatDIM as select BkISBN, BkCatfrom BOOK_TABLE;
+
+alter table BkCatDIM add (CatIDNumber(4));
+
+update BkCatDIM
+set CatID= 1
+where BkCat= 'Romance';
+
+update BkCatDIM
+set CatID= 2
+where BkCat= 'Thriller';
+
+update BkCatDIM
+set CatID= 3
+where BkCat= 'Action';
+
+update BkCatDIM
+set CatID= 4
+where BkCat= 'Horror';
+
+update BkCatDIM
+set CatID= 5
+where BkCat= 'Infographics';
+
+create table CustLocDIM as select CustID, CustomerName, CustCity from CUSTOMER1;
+create table BkCostDIM as select BkISBN, Price from BOOK_TABLE;
+
+alter table BkCostDIM add PriceRg varchar2(20);
+alter table BkCostDIM add PriceRgID number(2);
+
+update BkCostDIM
+set PriceRg = 'low cost', PriceRgID = 1
+where Price < 20;
+
+update BkCostDIM
+set PriceRg = 'medium cost', PriceRgID = 2
+where Price >= 20 and price <=50;
+
+update BkCostDIM
+set PriceRg = 'high cost', PriceRgID = 3
+where Price > 50;
+
+create table TmpFACT as
+select B.BkISBN, BC.CategoryID, C.CustID, T.TransactionDate, T.Qty
+from BOOK_TABLE B, BkCatDIM BC, TRANSACTION_TABLE T, CustLocDIM C, BkCostDIM P
+where B.BkISBN = T.BkISBN
+and T.CustID = C.CustID
+and T.BkISBN = P.BkISBN
+and P.BkISBN = BC.BkISBN;
+
+alter table TmpFACT add (TimePeriod Number(1));
+
+update TmpFACT
+set TimePeriod = 1
+where to_char(TransactionDate, 'MM') >= '01'
+and to_char(TransactionDate, 'MM') <= '03';
+
+update TmpFACT
+set TimePeriod = 2
+where to_char(TransactionDate, 'MM') >= '04'
+and to_char(TransactionDate, 'MM') <= '06';
+
+update TmpFACT
+set TimePeriod = 3
+where to_char(TransactionDate, 'MM') >= '07'
+and to_char(TransactionDate, 'MM') <= '09';
+
+update TmpFACT
+set TimePeriod = 4
+where to_char(TransactionDate, 'MM') >= '10'
+and to_char(TransactionDate, 'MM') <= '12';
+
+update TmpFACT
+set TimePeriod = 4
+where TimePeriod is null;
+
+create table PublishFACT as select BkISBN, CategoryID, CustID, TimePeriod, sum(Qty) as "Total Number Of Books Bought" from TmpFACT
+group by CategoryID, BkISBN, CustID, TimePeriod;
+
+
+-- Displaying FACTS and DIMENSIONS:
+
+select * from TransPerDIM ;
+select * from BkCatDIM;
+select * from BkCatDIM;
+select * from CustLocDIM;
+select * from BkCostDIM;
+select * from BkCostDIM;
+select * from TmpFACT;
+select * from TmpFACT;
+select * from PublishFACT;
+
+
+-- Performing Analysis:
+
+-- Finding Time Period With Maximum Purchases:
+
+select T.Quarter, sum("Total_Number_Books_Bought") as "Total Number Of Books Bought" from PublishFACT PU, TransPerDIM T
+where PU.TimePeriod = T.TimePeriod
+group by T.Quarter order by "Total Number Of Books Bought";
+
+-- Total Number Of Purchases (Category Wise):
+
+select B.BkCat, sum("Total_Number_Books_Bought") as "Total Number Of Books Bought" from PublishFACT PU, BkCatDIM B
+where PU.BkISBN = B.BkISBN 
+group by B.BkCatorder by B.BkCat;
+
+-- Total Number Of Purchases (City Wise):
+
+select C.CustCity, B.BkCat, sum("Total_Number_Books_Bought") as "Total Number Of Books Bought" from PublishFACT PU, TransPerDIM T, CustLocDIM C, BkCatDIM B 
+where PU.TimePeriod = T.TimePeriod and PU.CustID = C.CustID and PU.BkISBN = B.BkISBN
+group by C.CustCity, B.BkCatorder by C.CustCity;
+
